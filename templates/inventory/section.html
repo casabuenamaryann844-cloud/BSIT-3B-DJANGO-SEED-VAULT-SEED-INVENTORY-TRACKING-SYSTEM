@@ -1,0 +1,154 @@
+
+{% extends "theme/base.html" %}
+
+{% block content %}
+<div class="container-xl">
+
+    <div class="page-header mb-4">
+        <div class="page-pretitle">SeedVault Management</div>
+        <h2 class="page-title">{{ title }}</h2>
+        <p class="text-secondary">{{ description }}</p>
+    </div>
+
+    {% if kind == "categories" %}
+    <div class="row row-cards">
+        {% for item in categories %}
+        <div class="col-sm-6 col-xl-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-secondary">{{ item.name }}</div>
+                    <div class="h1 mb-3">{{ item.count }}</div>
+                    <a href="{% url 'inventory_list' %}"
+                       class="btn btn-outline-primary btn-sm">
+                        View Inventory
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% elif kind == "locations" %}
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                    <tr>
+                        <th>Storage Location</th>
+                        <th>Seed Records</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in locations %}
+                    <tr>
+                        <td>{{ item.name }}</td>
+                        <td>{{ item.count }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="2" class="text-center py-4">
+                            No storage locations recorded yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% elif kind == "status" %}
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                    <tr>
+                        <th>Seed Name</th>
+                        <th>Category</th>
+                        <th>Quantity</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in rows %}
+                    <tr>
+                        <td>{{ item.seed.seed_name }}</td>
+                        <td>{{ item.seed.get_category_display }}</td>
+                        <td>
+                            {{ item.seed.quantity }}
+                            {{ item.seed.get_unit_display }}
+                        </td>
+                        <td>
+                            {% if item.status == "Out of Stock" %}
+                            <span class="badge bg-danger text-white">
+                                {{ item.status }}
+                            </span>
+                            {% elif item.status == "Low Stock" %}
+                            <span class="badge bg-warning text-dark">
+                                {{ item.status }}
+                            </span>
+                            {% else %}
+                            <span class="badge bg-success text-white">
+                                {{ item.status }}
+                            </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-center py-4">
+                            No seed records available.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% elif kind == "reports" %}
+    <div class="row row-cards">
+        <div class="col-sm-6 col-xl-3">
+            <div class="card"><div class="card-body">
+                <div class="text-secondary">Total Records</div>
+                <div class="h1">{{ total_records }}</div>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card"><div class="card-body">
+                <div class="text-secondary">Available</div>
+                <div class="h1">{{ available }}</div>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card"><div class="card-body">
+                <div class="text-secondary">Low Stock</div>
+                <div class="h1">{{ low_stock }}</div>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card"><div class="card-body">
+                <div class="text-secondary">Out of Stock</div>
+                <div class="h1">{{ out_of_stock }}</div>
+            </div></div>
+        </div>
+        <div class="col-12">
+            <div class="card"><div class="card-body">
+                <div class="text-secondary">Total Quantity</div>
+                <div class="h1">{{ total_quantity }}</div>
+                <p class="text-secondary mb-0">
+                    Sum of quantities across all recorded units.
+                </p>
+            </div></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mt-4">
+        <a href="{% url 'dashboard' %}"
+           class="btn btn-outline-secondary">
+            Back to Dashboard
+        </a>
+    </div>
+
+</div>
+{% endblock %}

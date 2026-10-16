@@ -1,0 +1,67 @@
+```html
+{% extends "theme/base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Seed Inventory</h1>
+            <p class="text-secondary">Manage and monitor your seed stocks.</p>
+        </div>
+        <a href="{% url 'inventory_create' %}" class="btn btn-success">
+            + Add Seed
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                    <tr>
+                        <th>Seed Name</th>
+                        <th>Variety</th>
+                        <th>Category</th>
+                        <th>Quantity</th>
+                        <th>Unit</th>
+                        <th>Location</th>
+                        <th>Expiration Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for seed in seeds %}
+                    <tr>
+                        <td>{{ seed.seed_name }}</td>
+                        <td>{{ seed.variety|default:"—" }}</td>
+                        <td>{{ seed.get_category_display }}</td>
+                        <td>
+                            {{ seed.quantity }}
+                            {% if seed.is_low_stock %}
+                            <span class="badge bg-warning text-dark">Low Stock</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ seed.get_unit_display }}</td>
+                        <td>{{ seed.storage_location|default:"—" }}</td>
+                        <td>{{ seed.expiration_date|default:"—" }}</td>
+                        <td>
+                            <a href="{% url 'inventory_edit' seed.pk %}"
+                               class="btn btn-sm btn-primary">Edit</a>
+                            <a href="{% url 'inventory_delete' seed.pk %}"
+                               class="btn btn-sm btn-danger">Delete</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-secondary py-5">
+                            No seeds have been added yet. Click
+                            <strong>+ Add Seed</strong> to get started.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+```

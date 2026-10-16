@@ -6,9 +6,13 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+
+from .models import SeedInventory
+from .forms import SeedInventoryForm
+
 
 User = get_user_model()
 
@@ -17,6 +21,8 @@ LOCK_DURATION = timedelta(minutes=1)
 INVALID_LOGIN_MESSAGE = 'Invalid username or password.'
 LOCKED_MESSAGE = 'Too many failed attempts. Locked for 1 minute.'
 
+
+# LOGIN LOCK FUNCTIONS
 
 def _reset_lock_state(request):
     request.session['failed_attempts'] = 0
@@ -37,7 +43,9 @@ def _get_lock_state(request):
         return 0, None
 
     if timezone.now() < unlock_time:
-        remaining = int((unlock_time - timezone.now()).total_seconds())
+        remaining = int(
+            (unlock_time - timezone.now()).total_seconds()
+        )
         return failed_attempts, remaining
 
     _reset_lock_state(request)
@@ -50,6 +58,8 @@ def _set_lock_state(request):
     request.session['lock_time'] = lock_until.isoformat()
     return int(LOCK_DURATION.total_seconds())
 
+
+# REGISTRATION VALIDATION
 
 def _validate_registration_data(data):
     errors = {}
@@ -99,22 +109,37 @@ def _validate_registration_data(data):
     return errors
 
 
+# LOGIN
+
 @require_http_methods(['GET', 'POST'])
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
 
     failed_attempts, remaining = _get_lock_state(request)
+
     if remaining is not None:
-        messages.error(request, f'Too many failed attempts. Try again in {remaining} seconds.')
-        return render(request, 'auth/login.html', {'locked': True, 'remaining': remaining})
+        messages.error(
+            request,
+            f'Too many failed attempts. Try again in {remaining} seconds.'
+        )
+        return render(
+            request,
+            'auth/login.html',
+            {'locked': True, 'remaining': remaining}
+        )
 
     if request.method == 'GET':
         return render(request, 'auth/login.html')
 
     username = request.POST.get('username', '').strip()
     password = request.POST.get('password', '')
-    user = authenticate(request, username=username, password=password)
+
+    user = authenticate(
+        request,
+        username=username,
+        password=password
+    )
 
     if user is not None:
         _reset_lock_state(request)
@@ -123,25 +148,86 @@ def login_view(request):
 
     failed_attempts += 1
     request.session['failed_attempts'] = failed_attempts
+
     if failed_attempts >= MAX_FAILED_ATTEMPTS:
         remaining = _set_lock_state(request)
         messages.error(request, LOCKED_MESSAGE)
-        return render(request, 'auth/login.html', {'locked': True, 'remaining': remaining})
+        return render(
+            request,
+            'auth/login.html',
+            {'locked': True, 'remaining': remaining}
+        )
 
     remaining_attempts = MAX_FAILED_ATTEMPTS - failed_attempts
-    messages.error(request, f'{INVALID_LOGIN_MESSAGE} {remaining_attempts} attempts remaining.')
+    messages.error(
+        request,
+        f'{INVALID_LOGIN_MESSAGE} {remaining_attempts} attempts remaining.'
+    )
     return render(request, 'auth/login.html')
 
+
+# LOGOUT
 
 def logout_view(request):
     logout(request)
     return redirect('login')
 
 
-@login_required(login_url='login')
-def home(request):
-    return render(request, 'home.html')
+# WELCOME PAGE
 
+def welcome(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    return render(request, 'welcome.html')
+
+
+# DASHBOARD
+
+
+@login_required
+def home(request):
+    today = timezone.localdate()
+    seeds = SeedInventory.objects.all()
+
+    total_records = seeds.count()
+    out_of_stock = seeds.filter(quantity=0).count()
+    low_stock = seeds.filter(
+        quantity__gt=0,
+        quantity__lte=10
+    ).count()
+    available = seeds.filter(quantity__gt=10).count()
+
+    expiring_soon = seeds.filter(
+        expiration_date__gte=today,
+        expiration_date__lte=today + timedelta(days=30)
+    ).count()
+
+    expired = seeds.filter(
+        expiration_date__lt=today
+    ).count()
+
+    total_quantity = sum(
+        seed.quantity for seed in seeds
+    )
+
+    recent_seeds = seeds.order_by("-date_added")[:5]
+
+    context = {
+        "total_records": total_records,
+        "available": available,
+        "low_stock": low_stock,
+        "out_of_stock": out_of_stock,
+        "expiring_soon": expiring_soon,
+        "expired": expired,
+        "total_quantity": total_quantity,
+        "recent_seeds": recent_seeds,
+    }
+
+    return render(request, "home.html", context)
+
+
+# REGISTRATION
 
 @require_http_methods(['GET', 'POST'])
 def register_view(request):
@@ -161,8 +247,13 @@ def register_view(request):
     }
 
     errors = _validate_registration_data(form_data)
+
     if errors:
-        return render(request, 'auth/register.html', {'errors': errors, 'form_data': form_data})
+        return render(
+            request,
+            'auth/register.html',
+            {'errors': errors, 'form_data': form_data}
+        )
 
     user = User.objects.create_user(
         username=form_data['username'].strip(),
@@ -171,5 +262,183 @@ def register_view(request):
         email=form_data['email'].strip(),
         password=form_data['password'],
     )
+
     login(request, user)
     return redirect('dashboard')
+
+
+# SEED INVENTORY LIST
+
+@login_required(login_url='login')
+def inventory_list(request):
+    seeds = SeedInventory.objects.all()
+
+    return render(
+        request,
+        'inventory/list.html',
+        {'seeds': seeds}
+    )
+
+
+# ADD SEED
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def inventory_create(request):
+    if request.method == "POST":
+        form = SeedInventoryForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Seed added successfully!")
+            return redirect("inventory_list")
+    else:
+        form = SeedInventoryForm()
+
+    return render(request, "inventory/form.html", {
+        "form": form,
+        "title": "Add Seed",
+    })
+
+
+# EDIT SEED
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def inventory_edit(request, pk):
+    seed = get_object_or_404(SeedInventory, pk=pk)
+    form = SeedInventoryForm(request.POST or None, instance=seed)
+
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Seed record updated successfully.')
+        return redirect('inventory_list')
+
+    return render(
+        request,
+        'inventory/form.html',
+        {
+            'form': form,
+            'page_title': 'Edit Seed',
+        }
+    )
+
+
+# DELETE SEED
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def inventory_delete(request, pk):
+    seed = get_object_or_404(SeedInventory, pk=pk)
+
+    if request.method == 'POST':
+        seed.delete()
+        messages.success(request, 'Seed record deleted successfully.')
+        return redirect('inventory_list')
+
+    return render(
+        request,
+        'inventory/confirm_delete.html',
+        {'seed': seed}
+    )
+
+
+@login_required
+def seed_categories(request):
+    categories = []
+
+    for value, label in SeedInventory.CATEGORY_CHOICES:
+        categories.append({
+            "name": label,
+            "count": SeedInventory.objects.filter(
+                category=value
+            ).count(),
+        })
+
+    return render(request, "inventory/section.html", {
+        "title": "Seed Categories",
+        "description": "Browse seed records by category.",
+        "kind": "categories",
+        "categories": categories,
+    })
+
+
+@login_required
+def storage_locations(request):
+    seeds = SeedInventory.objects.exclude(
+        storage_location=""
+    ).exclude(
+        storage_location__isnull=True
+    )
+
+    locations = []
+    seen = set()
+
+    for seed in seeds.order_by("storage_location"):
+        location = seed.storage_location.strip()
+
+        if location and location.lower() not in seen:
+            seen.add(location.lower())
+            locations.append({
+                "name": location,
+                "count": seeds.filter(
+                    storage_location__iexact=location
+                ).count(),
+            })
+
+    return render(request, "inventory/section.html", {
+        "title": "Storage Locations",
+        "description": "View locations where seeds are stored.",
+        "kind": "locations",
+        "locations": locations,
+    })
+
+
+@login_required
+def seed_status(request):
+    seeds = SeedInventory.objects.all().order_by("seed_name")
+    rows = []
+
+    for seed in seeds:
+        if seed.quantity == 0:
+            status = "Out of Stock"
+        elif seed.quantity <= 10:
+            status = "Low Stock"
+        else:
+            status = "Available"
+
+        rows.append({
+            "seed": seed,
+            "status": status,
+        })
+
+    return render(request, "inventory/section.html", {
+        "title": "Seed Status",
+        "description": "Monitor available, low-stock, and out-of-stock seeds.",
+        "kind": "status",
+        "rows": rows,
+    })
+
+
+@login_required
+def inventory_reports(request):
+    seeds = SeedInventory.objects.all()
+
+    total_records = seeds.count()
+    available = seeds.filter(quantity__gt=10).count()
+    low_stock = seeds.filter(
+        quantity__gt=0, quantity__lte=10
+    ).count()
+    out_of_stock = seeds.filter(quantity=0).count()
+    total_quantity = sum(seed.quantity for seed in seeds)
+
+    return render(request, "inventory/section.html", {
+        "title": "Reports",
+        "description": "Summary of your current seed inventory.",
+        "kind": "reports",
+        "total_records": total_records,
+        "available": available,
+        "low_stock": low_stock,
+        "out_of_stock": out_of_stock,
+        "total_quantity": total_quantity,
+    })
